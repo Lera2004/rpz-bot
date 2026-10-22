@@ -1,7 +1,7 @@
 const SHEETS = {
   records: {
     name: 'Записи',
-    headers: ['Telegram ID', 'Телефон', 'Telegram username', 'Ім’я у Telegram', 'ПІБ', 'Дисципліна', 'Семестр', 'ПІБ студента', 'Академічна група', 'Оцінка', 'Статус опрацювання', 'Коментар', '']
+    headers: ['Telegram ID', 'Телефон', 'Telegram username', 'Ім’я у Telegram', 'Дата та час подання', 'ПІБ', 'Дисципліна', 'Семестр', 'ПІБ студента', 'Академічна група', 'Оцінка', 'Статус опрацювання', 'Коментар', '']
   }
 };
 
@@ -59,9 +59,11 @@ function ensureSheet(spreadsheet, definition) {
       .requireValueInList(statusOptions, true)
       .setAllowInvalid(false)
       .build();
-    sheet.getRange(2, 11, sheet.getMaxRows() - 1, 1).setDataValidation(statusRule);
-    sheet.getRange(2, 5, sheet.getMaxRows() - 1, 1).clearDataValidations();
-    sheet.hideColumns(13);
+    sheet.getRange(2, 12, sheet.getMaxRows() - 1, 1).setDataValidation(statusRule);
+    sheet.getRange(2, 6, sheet.getMaxRows() - 1, 1).clearDataValidations();
+    sheet.getRange(2, 11, sheet.getMaxRows() - 1, 1).clearDataValidations();
+    sheet.hideColumns(14);
+    sheet.getRange(2, 5, sheet.getMaxRows() - 1, 1).setNumberFormat('dd.MM.yyyy HH:mm:ss');
   }
 
   return sheet;
@@ -70,7 +72,7 @@ function ensureSheet(spreadsheet, definition) {
 function upsertById(sheet, id, values) {
   const lastRow = sheet.getLastRow();
   if (lastRow >= 2) {
-    const ids = sheet.getRange(2, 13, lastRow - 1, 1).getDisplayValues();
+    const ids = sheet.getRange(2, 14, lastRow - 1, 1).getDisplayValues();
     const index = ids.findIndex((row) => String(row[0]) === String(id));
     if (index >= 0) {
       sheet.getRange(index + 2, 1, 1, values.length).setValues([values.map(safeCell)]);
@@ -95,6 +97,7 @@ function gradeRow(grade) {
     grade.teacher_phone || '',
     grade.teacher_username ? `@${String(grade.teacher_username).replace(/^@/, '')}` : '',
     grade.teacher_display_name || '',
+    grade.submitted_at ? new Date(grade.submitted_at) : '',
     grade.teacher_name || '',
     grade.subject_name || '',
     grade.semester || '',
@@ -105,6 +108,31 @@ function gradeRow(grade) {
     grade.correction_comment || '',
     `grade:${grade.public_id}`
   ];
+}
+
+function migrateRecordColumnOrder(records) {
+  if (!records || records.getLastRow() < 2) return;
+
+  const lastRow = records.getLastRow();
+  const width = Math.max(records.getLastColumn(), SHEETS.records.headers.length);
+  const headers = records.getRange(1, 1, 1, width).getDisplayValues()[0];
+  if (headers[4] === 'Дата та час подання' && headers[13] === '') return;
+  if (headers[0] !== 'Telegram ID' || headers[1] !== 'Телефон' || headers[4] !== 'ПІБ') return;
+
+  const rows = records.getRange(2, 1, lastRow - 1, width).getValues();
+  const dateColumn = headers.indexOf('Дата та час подання');
+  const reorderedRows = rows.map((row) => [
+    row[0] || '',
+    row[1] || '',
+    row[2] || '',
+    row[3] || '',
+    dateColumn >= 0 ? row[dateColumn] || '' : '',
+    ...row.slice(4, 13)
+  ]);
+
+  records.getRange(1, 1, lastRow, width).clearContent();
+  records.getRange(1, 1, 1, SHEETS.records.headers.length).setValues([SHEETS.records.headers]);
+  records.getRange(2, 1, reorderedRows.length, SHEETS.records.headers.length).setValues(reorderedRows);
 }
 
 function migrateLegacySheets(spreadsheet) {
@@ -123,8 +151,8 @@ function migrateLegacySheets(spreadsheet) {
         if (!rawId || isTeacher || rawId.startsWith('teacher:')) return;
         const id = oldSchema ? `grade:${rawId.replace(/^grade:/, '')}` : rawId;
         const values = oldSchema
-          ? ['', '', '', '', row[3] || '', row[5] || '', row[6] || '', row[7] || '', row[8] || '', row[9] || '', row[10] || '', row[11] || '', id]
-          : ['', row[2] || '', row[3] || '', row[4] || '', row[1] || '', row[5] || '', row[6] || '', row[7] || '', row[8] || '', row[9] || '', row[10] || '', row[11] || '', id];
+          ? ['', '', '', '', '', row[3] || '', row[5] || '', row[6] || '', row[7] || '', row[8] || '', row[9] || '', row[10] || '', row[11] || '', id]
+          : ['', row[2] || '', row[3] || '', row[4] || '', '', row[1] || '', row[5] || '', row[6] || '', row[7] || '', row[8] || '', row[9] || '', row[10] || '', row[11] || '', id];
         upsertById(records, id, values);
       });
     }
@@ -136,8 +164,8 @@ function migrateLegacySheets(spreadsheet) {
       const oldRows = records.getRange(2, 1, records.getLastRow() - 1, records.getLastColumn()).getDisplayValues();
       const movedStudentBeforeSubject = headers[5] === 'ПІБ студента';
       const reorderedRows = oldRows.map((row) => movedStudentBeforeSubject
-        ? [row[0] || '', row[2] || '', row[3] || '', row[4] || '', row[1] || '', row[6] || '', row[7] || '', row[5] || '', ...row.slice(8, 13)]
-        : [row[0] || '', row[2] || '', row[3] || '', row[4] || '', row[1] || '', ...row.slice(5, 13)]);
+        ? [row[0] || '', row[2] || '', row[3] || '', row[4] || '', '', row[1] || '', row[6] || '', row[7] || '', row[5] || '', ...row.slice(8, 13)]
+        : [row[0] || '', row[2] || '', row[3] || '', row[4] || '', '', row[1] || '', ...row.slice(5, 13)]);
       records.clearContents();
       records.getRange(1, 1, 1, SHEETS.records.headers.length).setValues([SHEETS.records.headers]);
       records.getRange(2, 1, reorderedRows.length, SHEETS.records.headers.length).setValues(reorderedRows);
@@ -165,7 +193,8 @@ function migrateLegacySheets(spreadsheet) {
           row[6] || '',
           row[7] || '',
           row[5] || '',
-          ...row.slice(8, 13)
+          ...row.slice(8, 13),
+          row[13] || ''
         ];
       });
       if (correctedRows.some((row, index) => row.some((value, column) => value !== rows[index][column]))) {
@@ -174,6 +203,7 @@ function migrateLegacySheets(spreadsheet) {
     }
   }
 
+  migrateRecordColumnOrder(records);
   records = ensureSheet(spreadsheet, SHEETS.records);
   const gradeStatuses = {
     'Очікує опрацювання': 'Очікує опрацювання',
@@ -186,7 +216,7 @@ function migrateLegacySheets(spreadsheet) {
     grades.getRange(2, 1, grades.getLastRow() - 1, Math.max(grades.getLastColumn(), 12)).getDisplayValues().forEach((row) => {
       if (!row[0]) return;
       upsertById(records, `grade:${row[0]}`, [
-        '', '', '', '', row[2] || '', row[4] || '',
+        '', '', '', '', '', row[2] || '', row[4] || '',
         '', row[6] || '', row[5] || '', row[7] || '',
         gradeStatuses[row[8]] || 'Очікує опрацювання', row[11] || '',
         `grade:${row[0]}`
@@ -253,10 +283,10 @@ function sendTelegramNotification(chatId, message) {
 }
 
 function notificationText(sheet, row, column, value) {
-  const subject = sheet.getRange(row, 6).getDisplayValue();
-  const semester = sheet.getRange(row, 7).getDisplayValue();
-  const student = sheet.getRange(row, 8).getDisplayValue();
-  const grade = sheet.getRange(row, 10).getDisplayValue();
+  const subject = sheet.getRange(row, 7).getDisplayValue();
+  const semester = sheet.getRange(row, 8).getDisplayValue();
+  const student = sheet.getRange(row, 9).getDisplayValue();
+  const grade = sheet.getRange(row, 11).getDisplayValue();
   const details = [
     subject ? `Дисципліна: ${subject}` : '',
     semester ? `Семестр: ${semester}` : '',
@@ -264,7 +294,7 @@ function notificationText(sheet, row, column, value) {
     grade ? `Оцінка: ${grade}` : ''
   ].filter(Boolean);
 
-  if (column === 11) {
+  if (column === 12) {
     return ['Оновлення щодо вашого запису:', ...details, `Статус опрацювання: ${value}`].join('\n');
   }
   return ['Коментар до вашого запису:', ...details, `Коментар: ${value || 'коментар видалено'}`].join('\n');
@@ -277,11 +307,11 @@ function reportManualEdit(e) {
   const sheetName = sheet.getName();
   const column = e.range.getColumn();
   const row = e.range.getRow();
-  const recordId = sheet.getRange(row, 13).getDisplayValue();
+  const recordId = sheet.getRange(row, 14).getDisplayValue();
   if (!recordId) return;
 
   let updates;
-  if (sheetName === SHEETS.records.name && column === 11 && recordId.startsWith('grade:')) {
+  if (sheetName === SHEETS.records.name && column === 12 && recordId.startsWith('grade:')) {
     const statuses = {
       'Очікує опрацювання': 'pending',
       'Опрацьовано': 'read',
@@ -292,7 +322,7 @@ function reportManualEdit(e) {
     updates = {
       secretary_status: status
     };
-  } else if (sheetName === SHEETS.records.name && column === 12 && recordId.startsWith('grade:')) {
+  } else if (sheetName === SHEETS.records.name && column === 13 && recordId.startsWith('grade:')) {
     updates = { correction_comment: String(e.range.getValue() || '') };
   } else {
     return;
