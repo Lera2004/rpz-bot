@@ -24,12 +24,14 @@ async function notifyGradeTeacher(grade, updates) {
 
   try {
     await bot.telegram.sendMessage(Number(grade.telegram_id), messageParts.join('\n'));
+    return true;
   } catch (error) {
     logger.error('Grade update Telegram notification failed', {
       telegramId: grade.telegram_id,
       publicId: grade.public_id,
       message: error.message
     });
+    return false;
   }
 }
 
@@ -95,6 +97,7 @@ async function handleGoogleSync(req, res) {
       const setClause = fieldEntries.map(([field]) => `${field} = ?`).join(', ');
       const values = fieldEntries.map(([, value]) => value);
 
+      let notificationSent = null;
       if (gradeRecord) {
         const publicId = String(recordId).slice('grade:'.length);
         const rows = await query(
@@ -125,11 +128,11 @@ async function handleGoogleSync(req, res) {
           JSON.stringify(grade),
           JSON.stringify({ source: 'google-apps-script' })
         ]);
-        await notifyGradeTeacher(notificationGrade, updates);
+        notificationSent = await notifyGradeTeacher(notificationGrade, updates);
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: true, updated: true, sheetName, recordId }));
+      res.end(JSON.stringify({ ok: true, updated: true, notificationSent, sheetName, recordId }));
     } catch (error) {
       logger.error('API request failed', error.message);
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });

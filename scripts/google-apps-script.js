@@ -59,7 +59,7 @@ function ensureSheet(spreadsheet, definition) {
       .requireValueInList(statusOptions, true)
       .setAllowInvalid(false)
       .build();
-    sheet.getRange(2, 1, sheet.getMaxRows() - 1, 13).clearDataValidations();
+    sheet.getRange(2, 1, sheet.getMaxRows() - 1, 14).clearDataValidations();
     sheet.getRange(2, 12, sheet.getMaxRows() - 1, 1).setDataValidation(statusRule);
     sheet.hideColumns(14);
     sheet.getRange(2, 5, sheet.getMaxRows() - 1, 1).setNumberFormat('dd.MM.yyyy HH:mm:ss');
@@ -334,6 +334,7 @@ function reportManualEdit(e) {
     return;
   }
 
+  let apiUpdated = false;
   try {
     const nodeApiUrl = apiUrl();
     if (nodeApiUrl) {
@@ -348,14 +349,17 @@ function reportManualEdit(e) {
       if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
         throw new Error(`Node API rejected spreadsheet edit: HTTP ${response.getResponseCode()} — ${response.getContentText()}`);
       }
-      return;
+      const result = JSON.parse(response.getContentText() || '{}');
+      if (!result.ok) throw new Error('Node API did not confirm spreadsheet edit.');
+      apiUpdated = true;
+      if (result.notificationSent !== false) return;
     }
 
     const telegramId = sheet.getRange(row, 1).getDisplayValue();
     if (!telegramId) throw new Error('Telegram ID is missing for this grade record.');
     sendTelegramNotification(telegramId, notificationText(sheet, row, column, e.range.getDisplayValue()));
   } catch (error) {
-    if (e.oldValue !== undefined) e.range.setValue(e.oldValue);
+    if (!apiUpdated && e.oldValue !== undefined) e.range.setValue(e.oldValue);
     throw error;
   }
 
@@ -364,6 +368,9 @@ function reportManualEdit(e) {
 function createTriggers() {
   const spreadsheet = getSpreadsheet();
   migrateLegacySheets(spreadsheet);
+  const records = spreadsheet.getSheetByName(SHEETS.records.name);
+  if (!records) throw new Error(`Sheet '${SHEETS.records.name}' was not created.`);
+  ensureSheet(spreadsheet, SHEETS.records);
 
   ScriptApp.getProjectTriggers().forEach((trigger) => {
     if (trigger.getHandlerFunction() === 'reportManualEdit') {
@@ -375,4 +382,5 @@ function createTriggers() {
     .forSpreadsheet(spreadsheet)
     .onEdit()
     .create();
+  console.log('Records sheet repaired and reportManualEdit trigger installed.');
 }
