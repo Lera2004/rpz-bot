@@ -1,0 +1,2 @@
+ALTER TABLE teachers
+  MODIFY COLUMN phone VARCHAR(32) NULL;
