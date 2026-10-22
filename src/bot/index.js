@@ -199,7 +199,7 @@ async function displayTeacherDashboard(ctx) {
   }
 
   const rows = await query(
-    'SELECT gs.public_id, gs.semester, s.name AS subject_name, sg.name AS group_name, gs.student_name_snapshot, gs.grade, gs.secretary_status, gs.submitted_at FROM grade_submissions gs LEFT JOIN subjects s ON s.id = gs.subject_id LEFT JOIN student_groups sg ON sg.id = gs.group_id WHERE gs.teacher_id = ? ORDER BY gs.submitted_at DESC LIMIT 10',
+    'SELECT gs.public_id, gs.semester, s.name AS subject_name, sg.name AS group_name, gs.student_name_snapshot, gs.grade, gs.secretary_status, gs.submitted_at FROM grade_submissions gs LEFT JOIN subjects s ON s.id = gs.subject_id LEFT JOIN student_groups sg ON sg.id = gs.group_id WHERE gs.teacher_id = ? ORDER BY gs.submitted_at DESC, gs.id DESC LIMIT 10',
     [teacher.id]
   );
 
