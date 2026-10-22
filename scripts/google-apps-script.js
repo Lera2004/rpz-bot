@@ -1,7 +1,7 @@
 const SHEETS = {
   records: {
     name: 'Записи',
-    headers: ['Telegram ID', 'Телефон', 'Telegram username', 'Ім’я у Telegram', 'Дата та час подання', 'ПІБ', 'Дисципліна', 'Семестр', 'ПІБ студента', 'Академічна група', 'Оцінка', 'Статус опрацювання', 'Коментар', '']
+    headers: ['Telegram ID', 'Телефон', 'Telegram username', 'Ім’я у Telegram', 'Дата та час відправлення', 'ПІБ', 'Дисципліна', 'Семестр', 'ПІБ студента', 'Академічна група', 'Оцінка', 'Статус опрацювання', 'Коментар', '']
   }
 };
 
@@ -59,9 +59,8 @@ function ensureSheet(spreadsheet, definition) {
       .requireValueInList(statusOptions, true)
       .setAllowInvalid(false)
       .build();
+    sheet.getRange(2, 1, sheet.getMaxRows() - 1, 13).clearDataValidations();
     sheet.getRange(2, 12, sheet.getMaxRows() - 1, 1).setDataValidation(statusRule);
-    sheet.getRange(2, 6, sheet.getMaxRows() - 1, 1).clearDataValidations();
-    sheet.getRange(2, 11, sheet.getMaxRows() - 1, 1).clearDataValidations();
     sheet.hideColumns(14);
     sheet.getRange(2, 5, sheet.getMaxRows() - 1, 1).setNumberFormat('dd.MM.yyyy HH:mm:ss');
   }
@@ -116,19 +115,30 @@ function migrateRecordColumnOrder(records) {
   const lastRow = records.getLastRow();
   const width = Math.max(records.getLastColumn(), SHEETS.records.headers.length);
   const headers = records.getRange(1, 1, 1, width).getDisplayValues()[0];
-  if (headers[4] === 'Дата та час подання' && headers[13] === '') return;
-  if (headers[0] !== 'Telegram ID' || headers[1] !== 'Телефон' || headers[4] !== 'ПІБ') return;
+  if (headers.every((header, index) => header === SHEETS.records.headers[index])) return;
+  if (headers[0] !== 'Telegram ID') return;
 
   const rows = records.getRange(2, 1, lastRow - 1, width).getValues();
-  const dateColumn = headers.indexOf('Дата та час подання');
-  const reorderedRows = rows.map((row) => [
-    row[0] || '',
-    row[1] || '',
-    row[2] || '',
-    row[3] || '',
-    dateColumn >= 0 ? row[dateColumn] || '' : '',
-    ...row.slice(4, 13)
-  ]);
+  const headerAliases = {
+    'Дата та час подання': 'Дата та час відправлення'
+  };
+  const sourceColumns = SHEETS.records.headers.slice(0, 13).map((header) => {
+    const currentIndex = headers.indexOf(header);
+    if (currentIndex >= 0) return currentIndex;
+    const previousHeader = Object.keys(headerAliases).find((alias) => headerAliases[alias] === header);
+    return previousHeader ? headers.indexOf(previousHeader) : -1;
+  });
+  const reorderedRows = rows.map((row) => {
+    const recordId = row.find((value) => typeof value === 'string' && value.startsWith('grade:'));
+    const hasData = row.some((value) => value !== '' && value !== null);
+    if (!recordId && hasData) {
+      throw new Error('Grade record ID is missing during column migration.');
+    }
+    return [
+      ...sourceColumns.map((column) => column >= 0 ? row[column] || '' : ''),
+      recordId || ''
+    ];
+  });
 
   records.getRange(1, 1, lastRow, width).clearContent();
   records.getRange(1, 1, 1, SHEETS.records.headers.length).setValues([SHEETS.records.headers]);
