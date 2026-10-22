@@ -130,10 +130,6 @@ function migrateRecordColumnOrder(records) {
   });
   const reorderedRows = rows.map((row) => {
     const recordId = row.find((value) => typeof value === 'string' && value.startsWith('grade:'));
-    const hasData = row.some((value) => value !== '' && value !== null);
-    if (!recordId && hasData) {
-      throw new Error('Grade record ID is missing during column migration.');
-    }
     return [
       ...sourceColumns.map((column) => column >= 0 ? row[column] || '' : ''),
       recordId || ''
