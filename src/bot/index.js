@@ -264,7 +264,7 @@ async function startGradeSubmission(ctx) {
   session.student_input_mode = 'text';
   session.edit_public_id = null;
 
-  return ctx.reply('Введіть назву дисципліни (предмету), яку було перескладено, та номер семестру.\nНаприклад: Математика, 2', gradeInputKeyboard());
+  return ctx.reply('Введіть назву дисципліни (предмету), яку було перескладено.', gradeInputKeyboard());
 }
 
 async function finalizeGradeSubmission(ctx) {
@@ -359,7 +359,7 @@ async function finalizeGradeSubmission(ctx) {
   await syncGradeToGoogle(row);
 
   clearSession(ctx);
-  return ctx.reply(`✅ Запис збережено. ID: ${publicId}`, gradeSubmissionActions());
+  return ctx.reply('✅ Запис збережено.', gradeSubmissionActions());
 }
 
 function gradeSubmissionActions() {
@@ -578,7 +578,8 @@ bot.on('contact', async (ctx) => {
 
 function gradePrompt(step) {
   const prompts = {
-    subject_name: 'Введіть назву дисципліни (предмету), яку було перескладено, та номер семестру.\nНаприклад: Математика — 2',
+    subject_name: 'Введіть назву дисципліни (предмету), яку було перескладено.',
+    semester: 'Введіть номер семестру (від 1 до 8).',
     student_name: 'Введіть ПІБ студента, який пересклав дисципліну (предмет).',
     group_name: 'Введіть академічну групу, в якій навчається студент.',
     grade_value: `Введіть оцінку, на яку пересклав студент. Дозволені значення: ${allowedGradeDescription()}.`
@@ -595,7 +596,8 @@ function gradeConfirmationKeyboard() {
 
 function editFieldsKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('Дисципліна та семестр', 'grade_edit_field_subject_name')],
+    [Markup.button.callback('Дисципліна', 'grade_edit_field_subject_name')],
+    [Markup.button.callback('Семестр', 'grade_edit_field_semester')],
     [Markup.button.callback('ПІБ студента', 'grade_edit_field_student_name')],
     [Markup.button.callback('Академічна група', 'grade_edit_field_group_name')],
     [Markup.button.callback('Оцінка', 'grade_edit_field_grade_value')],
@@ -628,7 +630,8 @@ bot.on('text', async (ctx) => {
       confirm_grade: 'grade_value',
       grade_value: 'group_name',
       group_name: 'student_name',
-      student_name: 'subject_name'
+      student_name: 'semester',
+      semester: 'subject_name'
     };
     if (session.flow === 'grade' && previousSteps[session.step]) {
       session.step = previousSteps[session.step];
@@ -700,17 +703,18 @@ bot.on('text', async (ctx) => {
   }
 
   if (session.flow === 'grade' && session.step === 'subject_name') {
-    const match = text.match(/^(.+?)[,;—–-]\s*(\d{1,2})(?:\s*(?:семестр|сем\.)?)?$/i);
-    if (!match) {
-      return ctx.reply('Вкажіть дисципліну та номер семестру, наприклад: Математика — 2.');
-    }
-    const subjectName = sanitizeFullName(match[1]);
-    const semester = match[2];
-    if (subjectName.length < 2 || Number(semester) < 1 || Number(semester) > 12) {
-      return ctx.reply('Введіть коректну назву дисципліни та номер семестру (від 1 до 12).');
-    }
+    const subjectName = sanitizeFullName(text);
+    if (subjectName.length < 2) return ctx.reply('Введіть коректну назву дисципліни.');
     session.subject_name = subjectName;
-    session.semester = semester;
+    session.step = 'semester';
+    return ctx.reply(gradePrompt(session.step), gradeInputKeyboard());
+  }
+
+  if (session.flow === 'grade' && session.step === 'semester') {
+    if (!/^[1-8]$/.test(text)) {
+      return ctx.reply('Введіть номер семестру від 1 до 8.');
+    }
+    session.semester = text;
     session.step = 'student_name';
     return ctx.reply(gradePrompt(session.step), gradeInputKeyboard());
   }
@@ -739,18 +743,10 @@ bot.on('text', async (ctx) => {
       if (!allowed.includes(value)) {
         return ctx.reply(`Неприпустима оцінка. Дозволені значення: ${allowedGradeDescription()}.`);
       }
-    } else if (field === 'subject_name') {
-      const match = text.match(/^(.+?)[,;—–-]\s*(\d{1,2})(?:\s*(?:семестр|сем\.)?)?$/i);
-      if (!match || Number(match[2]) < 1 || Number(match[2]) > 12 || sanitizeFullName(match[1]).length < 2) {
-        return ctx.reply('Вкажіть дисципліну та номер семестру, наприклад: Математика — 2.');
+    } else if (field === 'semester') {
+      if (!/^[1-8]$/.test(text)) {
+        return ctx.reply('Введіть номер семестру від 1 до 8.');
       }
-      session.subject_name = sanitizeFullName(match[1]);
-      session.semester = match[2];
-      session.step = 'edit_confirm';
-      return ctx.reply(`Перевірте оновлений запис:\n${buildGradeSummary(session)}`, Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Зберегти зміни', 'grade_confirm')],
-        [Markup.button.callback('↩️ Назад', 'grade_back')]
-      ]));
     } else if (value.length < (field === 'student_name' ? 3 : 2)) {
       return ctx.reply('Введіть коректне значення.');
     }
@@ -800,7 +796,8 @@ bot.action('grade_back', async (ctx) => {
     confirm_grade: 'grade_value',
     grade_value: 'group_name',
     group_name: 'student_name',
-    student_name: 'subject_name'
+    student_name: 'semester',
+    semester: 'subject_name'
   };
   session.step = previousSteps[session.step] || 'subject_name';
   return ctx.reply(gradePrompt(session.step), gradeInputKeyboard());
@@ -843,13 +840,16 @@ bot.action(/^edit_grade_([0-9a-f-]{36})$/, async (ctx) => {
   return ctx.reply(`Оберіть поле для редагування:\n${buildGradeSummary(session)}`, editFieldsKeyboard());
 });
 
-bot.action(/^grade_edit_field_(subject_name|student_name|group_name|grade_value)$/, async (ctx) => {
+bot.action(/^grade_edit_field_(subject_name|semester|student_name|group_name|grade_value)$/, async (ctx) => {
   const session = getSession(ctx);
   if (!session.edit_public_id) return ctx.reply('Немає активного редагування запису.');
   session.edit_field = ctx.match[1];
   session.step = 'edit_value';
   if (session.edit_field === 'subject_name') {
-    return ctx.reply(`Поточні дані: ${session.subject_name} — ${session.semester}\nВведіть назву дисципліни та номер семестру.`, gradeInputKeyboard());
+    return ctx.reply(`Поточна дисципліна: ${session.subject_name}\nВведіть нову назву дисципліни.`, gradeInputKeyboard());
+  }
+  if (session.edit_field === 'semester') {
+    return ctx.reply(`Поточний семестр: ${session.semester}\n${gradePrompt('semester')}`, gradeInputKeyboard());
   }
   const current = session[session.edit_field === 'grade_value' ? 'grade' : session.edit_field];
   const labels = { student_name: 'ПІБ студента', group_name: 'академічну групу', grade_value: 'оцінку' };

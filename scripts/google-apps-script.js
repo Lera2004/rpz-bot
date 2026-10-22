@@ -1,7 +1,7 @@
 const SHEETS = {
   records: {
     name: 'Записи',
-    headers: ['Telegram ID', 'ПІБ', 'Телефон', 'Telegram username', 'Ім’я у Telegram', 'Дисципліна', 'Семестр', 'ПІБ студента', 'Академічна група', 'Оцінка', 'Статус опрацювання', 'Коментар', '']
+    headers: ['Telegram ID', 'Телефон', 'Telegram username', 'Ім’я у Telegram', 'ПІБ', 'Дисципліна', 'Семестр', 'ПІБ студента', 'Академічна група', 'Оцінка', 'Статус опрацювання', 'Коментар', '']
   }
 };
 
@@ -92,10 +92,10 @@ function gradeRow(grade) {
 
   return [
     grade.telegram_id || '',
-    grade.teacher_name || '',
     grade.teacher_phone || '',
     grade.teacher_username ? `@${String(grade.teacher_username).replace(/^@/, '')}` : '',
     grade.teacher_display_name || '',
+    grade.teacher_name || '',
     grade.subject_name || '',
     grade.semester || '',
     grade.student_name || '',
@@ -123,10 +123,54 @@ function migrateLegacySheets(spreadsheet) {
         if (!rawId || isTeacher || rawId.startsWith('teacher:')) return;
         const id = oldSchema ? `grade:${rawId.replace(/^grade:/, '')}` : rawId;
         const values = oldSchema
-          ? ['', row[3] || '', '', '', '', row[5] || '', row[6] || '', row[7] || '', row[8] || '', row[9] || '', row[10] || '', row[11] || '', id]
-          : [...row.slice(0, 12), id];
+          ? ['', '', '', '', row[3] || '', row[5] || '', row[6] || '', row[7] || '', row[8] || '', row[9] || '', row[10] || '', row[11] || '', id]
+          : ['', row[2] || '', row[3] || '', row[4] || '', row[1] || '', row[5] || '', row[6] || '', row[7] || '', row[8] || '', row[9] || '', row[10] || '', row[11] || '', id];
         upsertById(records, id, values);
       });
+    }
+  }
+
+  if (records && records.getLastRow() > 1) {
+    const headers = records.getRange(1, 1, 1, records.getLastColumn()).getDisplayValues()[0];
+    if (headers[0] === 'Telegram ID' && headers[1] === 'ПІБ') {
+      const oldRows = records.getRange(2, 1, records.getLastRow() - 1, records.getLastColumn()).getDisplayValues();
+      const movedStudentBeforeSubject = headers[5] === 'ПІБ студента';
+      const reorderedRows = oldRows.map((row) => movedStudentBeforeSubject
+        ? [row[0] || '', row[2] || '', row[3] || '', row[4] || '', row[1] || '', row[6] || '', row[7] || '', row[5] || '', ...row.slice(8, 13)]
+        : [row[0] || '', row[2] || '', row[3] || '', row[4] || '', row[1] || '', ...row.slice(5, 13)]);
+      records.clearContents();
+      records.getRange(1, 1, 1, SHEETS.records.headers.length).setValues([SHEETS.records.headers]);
+      records.getRange(2, 1, reorderedRows.length, SHEETS.records.headers.length).setValues(reorderedRows);
+    }
+  }
+
+  if (records && records.getLastRow() > 1) {
+    const headers = records.getRange(1, 1, 1, records.getLastColumn()).getDisplayValues()[0];
+    if (headers[0] === 'Telegram ID' && headers[1] === 'Телефон' && headers[4] === 'ПІБ') {
+      const rows = records.getRange(2, 1, records.getLastRow() - 1, SHEETS.records.headers.length).getDisplayValues();
+      const correctedRows = rows.map((row) => {
+        const oldPhone = String(row[2] || '').replace(/\D/g, '');
+        const oldUsername = String(row[3] || '');
+        const oldTeacherName = String(row[1] || '');
+        const looksMisaligned = !/^\+?[\d\s()-]{7,}$/.test(oldTeacherName) &&
+          ((oldPhone.length >= 7) || oldUsername.startsWith('@'));
+        if (!looksMisaligned) return row;
+
+        return [
+          row[0] || '',
+          row[2] || '',
+          row[3] || '',
+          row[4] || '',
+          row[1] || '',
+          row[6] || '',
+          row[7] || '',
+          row[5] || '',
+          ...row.slice(8, 13)
+        ];
+      });
+      if (correctedRows.some((row, index) => row.some((value, column) => value !== rows[index][column]))) {
+        records.getRange(2, 1, correctedRows.length, SHEETS.records.headers.length).setValues(correctedRows);
+      }
     }
   }
 
@@ -142,8 +186,8 @@ function migrateLegacySheets(spreadsheet) {
     grades.getRange(2, 1, grades.getLastRow() - 1, Math.max(grades.getLastColumn(), 12)).getDisplayValues().forEach((row) => {
       if (!row[0]) return;
       upsertById(records, `grade:${row[0]}`, [
-        '', row[2] || '', '', '', '', row[4] || '', '',
-        row[6] || '', row[5] || '', row[7] || '',
+        '', '', '', '', row[2] || '', row[4] || '',
+        '', row[6] || '', row[5] || '', row[7] || '',
         gradeStatuses[row[8]] || 'Очікує опрацювання', row[11] || '',
         `grade:${row[0]}`
       ]);
