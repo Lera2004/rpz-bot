@@ -579,7 +579,7 @@ bot.on('contact', async (ctx) => {
 function gradePrompt(step) {
   const prompts = {
     subject_name: 'Введіть назву дисципліни (предмету), яку було перескладено.',
-    semester: 'Введіть номер семестру (від 1 до 8).',
+    semester: 'Введіть число від 1 до 8 відповідно до потрібного семестру.\n\n📚 Відповідність семестрів курсам:\n\n• 1 курс — 1 та 2 семестри\n• 2 курс — 3 та 4 семестри\n• 3 курс — 5 та 6 семестри\n• 4 курс — 7 та 8 семестри',
     student_name: 'Введіть ПІБ студента, який пересклав дисципліну (предмет).',
     group_name: 'Введіть академічну групу, в якій навчається студент.',
     grade_value: `Введіть оцінку, на яку пересклав студент. Дозволені значення: ${allowedGradeDescription()}.`
@@ -712,7 +712,7 @@ bot.on('text', async (ctx) => {
 
   if (session.flow === 'grade' && session.step === 'semester') {
     if (!/^[1-8]$/.test(text)) {
-      return ctx.reply('Введіть номер семестру від 1 до 8.');
+      return ctx.reply(gradePrompt('semester'));
     }
     session.semester = text;
     session.step = 'student_name';
@@ -745,7 +745,7 @@ bot.on('text', async (ctx) => {
       }
     } else if (field === 'semester') {
       if (!/^[1-8]$/.test(text)) {
-        return ctx.reply('Введіть номер семестру від 1 до 8.');
+        return ctx.reply(gradePrompt('semester'));
       }
     } else if (value.length < (field === 'student_name' ? 3 : 2)) {
       return ctx.reply('Введіть коректне значення.');
