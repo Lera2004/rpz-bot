@@ -37,6 +37,31 @@ async function postToAppsScript(action, record) {
   if (!response.ok || !result.ok) {
     throw new Error(`Apps Script rejected sync (HTTP ${response.status}). Check its deployment and Script Properties.`);
   }
+
+  return result;
+}
+
+async function fetchTeacherGradeStatuses(telegramId) {
+  if (!hasGoogleConfig()) {
+    throw new Error('Google Sheets sync is not configured.');
+  }
+
+  const result = await postToAppsScript('getTeacherGradeStatuses', {
+    telegram_id: String(telegramId)
+  });
+  if (!Array.isArray(result.grades)) {
+    throw new Error('Apps Script returned an invalid grade status list.');
+  }
+
+  const validStatuses = new Set(['pending', 'read', 'needs_correction']);
+  return result.grades.map((grade) => {
+    if (!grade || typeof grade.public_id !== 'string' || !grade.public_id ||
+        !validStatuses.has(grade.secretary_status) ||
+        (grade.correction_comment !== null && typeof grade.correction_comment !== 'string')) {
+      throw new Error('Apps Script returned an invalid grade status record.');
+    }
+    return grade;
+  });
 }
 
 async function performSync(action, record, table, identifier) {
@@ -92,5 +117,6 @@ function syncGradeToGoogle(gradeSubmission) {
 module.exports = {
   syncTeacherToGoogle,
   syncGradeToGoogle,
+  fetchTeacherGradeStatuses,
   hasGoogleConfig
 };

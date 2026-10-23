@@ -254,6 +254,52 @@ function doPost(e) {
     }
 
     const spreadsheet = getSpreadsheet();
+    if (request.action === 'getTeacherGradeStatuses' &&
+        request.record && request.record.telegram_id) {
+      const sheet = spreadsheet.getSheetByName(SHEETS.records.name);
+      if (!sheet) throw new Error(`Sheet '${SHEETS.records.name}' was not found.`);
+
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+      const telegramIdColumn = headers.indexOf('Telegram ID');
+      const statusColumn = headers.indexOf('Статус опрацювання');
+      const commentColumn = headers.indexOf('Коментар');
+      if ([telegramIdColumn, statusColumn, commentColumn].some((column) => column < 0)) {
+        throw new Error('Required grade columns are missing from the records sheet.');
+      }
+
+      const statuses = {
+        'Очікує опрацювання': 'pending',
+        'Опрацьовано': 'read',
+        'Потребує виправлення': 'needs_correction'
+      };
+      const rows = sheet.getLastRow() > 1
+        ? sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getDisplayValues()
+        : [];
+      const telegramId = String(request.record.telegram_id).trim();
+      const grades = rows.reduce((result, row) => {
+        const recordId = String(row.find((value) => String(value).startsWith('grade:')) || '');
+        if (String(row[telegramIdColumn] || '').trim() !== telegramId ||
+            !recordId.startsWith('grade:')) {
+          return result;
+        }
+
+        const sheetStatus = String(row[statusColumn] || '').trim();
+        const secretaryStatus = statuses[sheetStatus] || (sheetStatus ? null : 'pending');
+        if (secretaryStatus === null) {
+          throw new Error(`Invalid status for grade record ${recordId}.`);
+        }
+
+        result.push({
+          public_id: recordId.slice('grade:'.length),
+          secretary_status: secretaryStatus,
+          correction_comment: String(row[commentColumn] || '')
+        });
+        return result;
+      }, []);
+
+      return outputJson({ ok: true, grades });
+    }
+
     migrateLegacySheets(spreadsheet);
 
     let row;
@@ -289,10 +335,16 @@ function sendTelegramNotification(chatId, message) {
 }
 
 function notificationText(sheet, row, column, value) {
-  const subject = sheet.getRange(row, 7).getDisplayValue();
-  const semester = sheet.getRange(row, 8).getDisplayValue();
-  const student = sheet.getRange(row, 9).getDisplayValue();
-  const grade = sheet.getRange(row, 11).getDisplayValue();
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  const getValue = (header) => {
+    const columnIndex = headers.indexOf(header);
+    return columnIndex >= 0 ? sheet.getRange(row, columnIndex + 1).getDisplayValue() : '';
+  };
+  const subject = getValue('Дисципліна');
+  const semester = getValue('Семестр');
+  const student = getValue('ПІБ студента');
+  const grade = getValue('Оцінка');
+  const statusColumn = headers.indexOf('Статус опрацювання') + 1;
   const details = [
     subject ? `Дисципліна: ${subject}` : '',
     semester ? `Семестр: ${semester}` : '',
@@ -300,7 +352,7 @@ function notificationText(sheet, row, column, value) {
     grade ? `Оцінка: ${grade}` : ''
   ].filter(Boolean);
 
-  if (column === 12) {
+  if (column === statusColumn) {
     return ['Оновлення щодо вашого запису:', ...details, `Статус опрацювання: ${value}`].join('\n');
   }
   return ['Коментар до вашого запису:', ...details, `Коментар: ${value || 'коментар видалено'}`].join('\n');
@@ -313,11 +365,17 @@ function reportManualEdit(e) {
   const sheetName = sheet.getName();
   const column = e.range.getColumn();
   const row = e.range.getRow();
-  const recordId = sheet.getRange(row, 14).getDisplayValue();
-  if (!recordId) return;
+  if (sheetName !== SHEETS.records.name) return;
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  const statusColumn = headers.indexOf('Статус опрацювання') + 1;
+  const commentColumn = headers.indexOf('Коментар') + 1;
+  const rowValues = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  const recordId = rowValues.find((value) => String(value).startsWith('grade:'));
+  if (!recordId || !recordId.startsWith('grade:')) return;
 
   let updates;
-  if (sheetName === SHEETS.records.name && column === 12 && recordId.startsWith('grade:')) {
+  if (column === statusColumn && statusColumn > 0) {
     const statuses = {
       'Очікує опрацювання': 'pending',
       'Опрацьовано': 'read',
@@ -328,7 +386,7 @@ function reportManualEdit(e) {
     updates = {
       secretary_status: status
     };
-  } else if (sheetName === SHEETS.records.name && column === 13 && recordId.startsWith('grade:')) {
+  } else if (column === commentColumn && commentColumn > 0) {
     updates = { correction_comment: String(e.range.getValue() || '') };
   } else {
     return;

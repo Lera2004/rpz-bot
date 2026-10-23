@@ -3,7 +3,11 @@ const { v4: uuidv4 } = require('uuid');
 const config = require('../config');
 const { query } = require('../db/mysql');
 const logger = require('../utils/logger');
-const { syncTeacherToGoogle, syncGradeToGoogle } = require('../services/googleSheets');
+const {
+  syncTeacherToGoogle,
+  syncGradeToGoogle,
+  fetchTeacherGradeStatuses
+} = require('../services/googleSheets');
 
 const bot = new Telegraf(config.telegramToken || '');
 const sessions = new Map();
@@ -198,13 +202,34 @@ async function displayTeacherDashboard(ctx) {
     return ctx.reply('Спочатку завершіть реєстрацію через /start.');
   }
 
+  let statusRefreshWarning = '';
+  try {
+    const grades = await fetchTeacherGradeStatuses(teacher.telegram_id);
+    for (const grade of grades) {
+      await query(
+        "UPDATE grade_submissions SET secretary_status = ?, correction_comment = ? WHERE public_id = ? AND teacher_id = ? AND (secretary_status <> ? OR COALESCE(correction_comment, '') <> ?)",
+        [
+          grade.secretary_status,
+          grade.correction_comment,
+          grade.public_id,
+          teacher.id,
+          grade.secretary_status,
+          grade.correction_comment
+        ]
+      );
+    }
+  } catch (error) {
+    logger.error('Grade status refresh from Google Sheets failed', error.message);
+    statusRefreshWarning = '⚠️ Не вдалося оновити статуси з Google Таблиці. Нижче показано останні збережені дані; повідомте адміністратора.';
+  }
+
   const rows = await query(
     'SELECT gs.public_id, gs.semester, s.name AS subject_name, sg.name AS group_name, gs.student_name_snapshot, gs.grade, gs.secretary_status, gs.submitted_at FROM grade_submissions gs LEFT JOIN subjects s ON s.id = gs.subject_id LEFT JOIN student_groups sg ON sg.id = gs.group_id WHERE gs.teacher_id = ? ORDER BY gs.submitted_at DESC, gs.id DESC LIMIT 10',
     [teacher.id]
   );
 
   if (!rows.length) {
-    return ctx.reply('У вас поки що немає записів оцінок.');
+    return ctx.reply(`${statusRefreshWarning ? `${statusRefreshWarning}\n\n` : ''}У вас поки що немає записів оцінок.`);
   }
 
   const secretaryStatuses = {
@@ -219,7 +244,7 @@ async function displayTeacherDashboard(ctx) {
   const keyboard = Markup.inlineKeyboard(rows.map((row, index) => [
     Markup.button.callback(`✏️ Редагувати запис ${index + 1}`, `edit_grade_${row.public_id}`)
   ]));
-  return ctx.reply(`Ваші записи (для редагування оберіть запис нижче):\n${lines}`, keyboard);
+  return ctx.reply(`${statusRefreshWarning ? `${statusRefreshWarning}\n\n` : ''}Ваші записи (для редагування оберіть запис нижче):\n${lines}`, keyboard);
 }
 
 async function showTeacherProfile(ctx) {
