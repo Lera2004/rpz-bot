@@ -161,12 +161,8 @@ function buildGradeSummary(session) {
   ].join('\n');
 }
 
-function allowedGradeDescription() {
-  const grades = config.allowedGradeValues;
-  if (grades.length === 101 && grades[0] === '0' && grades[100] === '100') {
-    return 'від 0 до 100 включно';
-  }
-  return grades.join(', ');
+function gradeScaleGuidance() {
+  return 'Дозволені значення:\n• 12-бальна система — від 1 до 12\n• 100-бальна система — від 1 до 100';
 }
 
 async function ensureNamedRecordId(tableName, name) {
@@ -607,7 +603,7 @@ function gradePrompt(step) {
     semester: 'Введіть номер семестру в якому викладалася дисципліна (дозволені значення від 1 до 8)\n\n📚 Відповідність семестрів курсам:\n\n• 1 курс — 1 та 2 семестри\n• 2 курс — 3 та 4 семестри\n• 3 курс — 5 та 6 семестри\n• 4 курс — 7 та 8 семестри',
     student_name: 'Введіть ПІБ студента, який пересклав дисципліну (предмет).',
     group_name: 'Введіть академічну групу, в якій навчається студент.',
-    grade_value: 'Введіть оцінку, на яку пересклав студент.\nДозволені значення:\n• 12-бальна система — від 1 до 12\n• 100-бальна система — від 1 до 100'
+    grade_value: `Введіть оцінку, на яку пересклав студент.\n${gradeScaleGuidance()}`
   };
   return prompts[step];
 }
@@ -766,7 +762,7 @@ bot.on('text', async (ctx) => {
     if (field === 'grade_value') {
       const allowed = config.allowedGradeValues || ['2', '3', '4', '5', '12'];
       if (!allowed.includes(value)) {
-        return ctx.reply(`Неприпустима оцінка. Дозволені значення: ${allowedGradeDescription()}.`);
+        return ctx.reply(`Неприпустима оцінка.\n${gradeScaleGuidance()}`);
       }
     } else if (field === 'semester') {
       if (!/^[1-8]$/.test(text)) {
@@ -879,7 +875,7 @@ bot.action(/^grade_edit_field_(subject_name|semester|student_name|group_name|gra
   const current = session[session.edit_field === 'grade_value' ? 'grade' : session.edit_field];
   const labels = { student_name: 'ПІБ студента', group_name: 'академічну групу', grade_value: 'оцінку' };
   const guidance = session.edit_field === 'grade_value'
-    ? '\nДозволені значення:\n• 12-бальна система — від 1 до 12\n• 100-бальна система — від 1 до 100'
+    ? `\n${gradeScaleGuidance()}`
     : '';
   return ctx.reply(`Поточне значення (${labels[session.edit_field]}): ${current}\nВведіть нове значення.${guidance}`, gradeInputKeyboard());
 });
