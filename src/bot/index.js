@@ -879,7 +879,7 @@ bot.action(/^grade_edit_field_(subject_name|semester|student_name|group_name|gra
   const current = session[session.edit_field === 'grade_value' ? 'grade' : session.edit_field];
   const labels = { student_name: 'ПІБ студента', group_name: 'академічну групу', grade_value: 'оцінку' };
   const guidance = session.edit_field === 'grade_value'
-    ? ` Дозволені значення: ${allowedGradeDescription()}.`
+    ? '\nДозволені значення:\n• 12-бальна система — від 1 до 12\n• 100-бальна система — від 1 до 100'
     : '';
   return ctx.reply(`Поточне значення (${labels[session.edit_field]}): ${current}\nВведіть нове значення.${guidance}`, gradeInputKeyboard());
 });
