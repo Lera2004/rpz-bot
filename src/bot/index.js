@@ -761,7 +761,7 @@ bot.on('text', async (ctx) => {
     const value = field === 'grade_value' ? text : sanitizeFullName(text);
     if (field === 'grade_value') {
       const allowed = config.allowedGradeValues || ['2', '3', '4', '5', '12'];
-      if (!allowed.includes(value)) {
+      if (!/^(?:[1-9]|[1-9]\d|100)$/.test(value) || !allowed.includes(value)) {
         return ctx.reply(`Неприпустима оцінка.\n${gradeScaleGuidance()}`);
       }
     } else if (field === 'semester') {
