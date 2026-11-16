@@ -43,7 +43,7 @@ const config = {
   appPort: Number(process.env.APP_PORT || 3000),
   syncRetryLimit: Number(process.env.SYNC_RETRY_LIMIT || 5),
   syncDelayMs: Number(process.env.SYNC_DELAY_MS || 5000),
-  allowedGradeValues: parseAllowedGrades(process.env.ALLOWED_GRADE_VALUES || '0-100')
+  allowedGradeValues: parseAllowedGrades(process.env.ALLOWED_GRADE_VALUES || '1-100')
 };
 
 if (!config.telegramToken) {
